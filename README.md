@@ -2,8 +2,17 @@
 Official Pytorch implementation of CRAFT text detector | [Paper](https://arxiv.org/abs/1904.01941) | [Pretrained Model](https://drive.google.com/open?id=1Jk4eGD7crsqCCg9C9VjCLkMN3ze8kutZ) | [Supplementary](https://youtu.be/HI8MzpY8KMI)
 
 **[Youngmin Baek](mailto:youngmin.baek@navercorp.com), Bado Lee, Dongyoon Han, Sangdoo Yun, Hwalsuk Lee.**
- 
+
 Clova AI Research, NAVER Corp.
+
+#### How to run on a docker as a flask server
+```bash
+docker build -t ocr .
+docker run --gpus 1 -it --detach --publish 5000:5000 --name ocr_container ocr
+```
+client script can be find at `client.py`
+
+
 
 ### Sample Results
 
@@ -35,7 +44,7 @@ The code for training is not included in this repository, and we cannot release 
 
 ### Test instruction using pretrained model
 - Download the trained models
- 
+
  *Model name* | *Used datasets* | *Languages* | *Purpose* | *Model Link* |
  | :--- | :--- | :--- | :--- | :--- |
 General | SynthText, IC13, IC17 | Eng + MLT | For general purpose | [Click](https://drive.google.com/open?id=1Jk4eGD7crsqCCg9C9VjCLkMN3ze8kutZ)

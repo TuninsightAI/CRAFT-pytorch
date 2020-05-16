@@ -30,7 +30,7 @@ def list_files(in_path):
     # gt_files.sort()
     return img_files, mask_files, gt_files
 
-def saveResult(img_file, img, boxes, dirname='./result/', verticals=None, texts=None):
+def saveResult(img_file, img, boxes, dirname='./result/', verticals=None, texts=None, return_matrix=False):
         """ save text detection result one by one
         Args:
             img_file (str): image file name
@@ -72,5 +72,7 @@ def saveResult(img_file, img, boxes, dirname='./result/', verticals=None, texts=
                     cv2.putText(img, "{}".format(texts[i]), tuple(poly[0]), font, font_scale, (0, 255, 255), thickness=1)
 
         # Save result image
+        if return_matrix:
+            return img
         cv2.imwrite(res_img_file, img)
 

@@ -3,4 +3,8 @@
 *.pkl
 *.pth
 result*
-weights*
+.idea/
+.mypy_cache/
+api_result/
+data/
+
