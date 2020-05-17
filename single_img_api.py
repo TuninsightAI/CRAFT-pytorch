@@ -25,8 +25,19 @@ from craft import CRAFT
 app = Flask(__name__)
 
 
-def get_image(image_path):
-    img = Image.open(image_path, mode='r')
+def img_iter(image: np.ndarray, step: int):
+    x, y = image.shape[:2]
+    xs = np.arange(0, x - step, step)
+    xs = np.append(xs, x - step)
+    ys = np.arange(0, y - step, step)
+    ys = np.append(ys, y - step)
+    for _x in xs:
+        for _y in ys:
+            yield image[_x:_x + step, _y:_y + step, :], [[_x, _x + step], [_y, _y + step]]
+
+
+def get_image_bytes(image_array: np.ndarray):
+    img = Image.fromarray(image_array)
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='JPEG')
     encoded_img = base64.encodebytes(img_byte_arr.getvalue()).decode('ascii')
@@ -47,8 +58,7 @@ def predict():
         img_bytes = file.read()
         result_encoding = test_single_image(net, img_bytes, args.text_threshold, args.link_threshold,
                                             args.low_text,
-                                            args.cuda, args.poly, None)
-        print(type(result_encoding))
+                                            args.cuda, args.poly)
         return jsonify({"message": "okay", "result": result_encoding})
     else:
         return "hello"
@@ -83,7 +93,7 @@ parser.add_argument('--text_threshold', default=0.2, type=float, help='text conf
 parser.add_argument('--low_text', default=0.1, type=float, help='text low-bound score')
 parser.add_argument('--link_threshold', default=0.2, type=float, help='link confidence threshold')
 parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda for inference')
-parser.add_argument('--canvas_size', default=1500, type=int, help='image size for inference')
+parser.add_argument('--canvas_size', default=500, type=int, help='image size for inference')
 parser.add_argument('--mag_ratio', default=1, type=float, help='image magnification ratio')
 parser.add_argument('--poly', default=False, action='store_true', help='enable polygon type')
 parser.add_argument('--show_time', default=False, action='store_true', help='show processing time')
@@ -95,7 +105,7 @@ parser.add_argument('--refiner_model', default='weights/craft_refiner_CTW1500.pt
 args = parser.parse_args()
 
 
-def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly, refine_net=None):
+def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly):
     t0 = time.time()
     # resize
     img_resized, target_ratio, size_heatmap = imgproc.resize_aspect_ratio(image, args.canvas_size,
@@ -114,13 +124,6 @@ def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly, r
     # make score and link map
     score_text = y[0, :, :, 0].cpu().data.numpy()
     score_link = y[0, :, :, 1].cpu().data.numpy()
-    # refine link
-    if refine_net is not None:
-        with torch.no_grad():
-            y_refiner = refine_net(y, feature)
-        score_link = y_refiner[0, :, :, 0].cpu().data.numpy()
-    t0 = time.time() - t0
-    t1 = time.time()
     # Post-processing
     boxes, polys = craft_utils.getDetBoxes(score_text, score_link, text_threshold, link_threshold, low_text, poly)
     # coordinate adjustment
@@ -128,26 +131,32 @@ def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly, r
     polys = craft_utils.adjustResultCoordinates(polys, ratio_w, ratio_h)
     for k in range(len(polys)):
         if polys[k] is None: polys[k] = boxes[k]
-    t1 = time.time() - t1
     # render results (optional)
     render_img = score_text.copy()
     render_img = np.hstack((render_img, score_link))
     ret_score_text = imgproc.cvt2HeatmapImg(render_img)
-    if args.show_time: print("\ninfer/postproc time : {:.3f}/{:.3f}".format(t0, t1))
     return boxes, polys, ret_score_text
 
 
 def test_single_image(net, image_bytes, text_threshold, link_threshold, low_text, cuda, poly, refine_net=None):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     image = np.asarray(image)
-    bboxes, polys, score_text = test_net(net, image, text_threshold, link_threshold, low_text,
-                                         cuda, poly, None)
-    random_name = randomString(8)
-    file_utils.saveResult(random_name, image[:, :, ::-1], polys, dirname="api_result/")
-    result_encoding = get_image(f"api_result/res_{random_name}.jpg")
-
-    # result_encoding= open(f"api_result/res_{random_name}.jpg", 'rb')
+    result_image = np.zeros_like(image)
+    image_path_gen = img_iter(image, args.canvas_size)
+    for image_patch, coord in image_path_gen:
+        result_patch = _test_patch_image(net, image_patch, text_threshold, link_threshold, low_text, cuda, poly)
+        result_image[coord[0][0]:coord[0][1], coord[1][0]:coord[1][1]] = result_patch
+    result_encoding = get_image_bytes(result_image)
     return result_encoding
+
+
+def _test_patch_image(net, image_patch, text_threshold, link_threshold, low_text, cuda, poly):
+    bboxes, polys, score_text = test_net(net, image_patch, text_threshold, link_threshold, low_text,
+                                         cuda, poly)
+    random_name = randomString(8)
+    result_patch = file_utils.saveResult(random_name, image_patch[:, :, ::-1], polys, dirname="api_result/",
+                                         return_matrix=True)
+    return result_patch
 
 
 if __name__ == '__main__':

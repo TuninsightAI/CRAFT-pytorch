@@ -10,4 +10,4 @@ def save_image(image_bytes, image_path="result.jpg"):
 
 resp = requests.post("http://localhost:5000/predict",
                      files={"file": open('data/屋顶-ALL.png', 'rb')})
-save_image(image_bytes=resp.json()["result"], image_path="result.jpg")
+save_image(image_bytes=resp.json()["result"], image_path="result_300.jpg")
