@@ -11,6 +11,7 @@ from collections import OrderedDict
 
 import cv2
 import numpy as np
+import pandas as pd
 import torch
 import torch.backends.cudnn as cudnn
 from PIL import Image
@@ -55,11 +56,13 @@ def randomString(stringLength=8):
 def predict():
     if request.method == 'POST':
         file = request.files['file']
+        draw_contour = eval(request.files["draw_contour"].read())
         img_bytes = file.read()
-        result_encoding = test_single_image(net, img_bytes, args.text_threshold, args.link_threshold,
-                                            args.low_text,
-                                            args.cuda, args.poly)
-        return jsonify({"message": "okay", "result": result_encoding})
+        result_encoding, bbox = test_single_image(net, img_bytes, args.text_threshold, args.link_threshold,
+                                                  args.low_text,
+                                                  args.cuda, args.poly, draw_contour=draw_contour)
+        bbox_json = pd.Series(bbox).to_json(orient='values')
+        return jsonify({"message": "okay", "result": result_encoding, "bbox": bbox_json})
     else:
         return "hello"
 
@@ -138,25 +141,30 @@ def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly):
     return boxes, polys, ret_score_text
 
 
-def test_single_image(net, image_bytes, text_threshold, link_threshold, low_text, cuda, poly, refine_net=None):
+def test_single_image(net, image_bytes, text_threshold, link_threshold, low_text, cuda, poly, refine_net=None,
+                      draw_contour=True):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     image = np.asarray(image)
     result_image = np.zeros_like(image)
     image_path_gen = img_iter(image, args.canvas_size)
+    bboxes_list = []
     for image_patch, coord in image_path_gen:
-        result_patch = _test_patch_image(net, image_patch, text_threshold, link_threshold, low_text, cuda, poly)
+        result_patch, bboxes = _test_patch_image(net, image_patch, text_threshold, link_threshold, low_text, cuda, poly,
+                                                 draw_contour)
+        bboxes_list.append((coord, bboxes))
         result_image[coord[0][0]:coord[0][1], coord[1][0]:coord[1][1]] = result_patch
     result_encoding = get_image_bytes(result_image)
-    return result_encoding
+    return result_encoding, bboxes_list
 
 
-def _test_patch_image(net, image_patch, text_threshold, link_threshold, low_text, cuda, poly):
+def _test_patch_image(net, image_patch, text_threshold, link_threshold, low_text, cuda, poly, draw_contour):
     bboxes, polys, score_text = test_net(net, image_patch, text_threshold, link_threshold, low_text,
                                          cuda, poly)
     random_name = randomString(8)
+    # todo: here to add the ocr recognition.
     result_patch = file_utils.saveResult(random_name, image_patch[:, :, ::-1], polys, dirname="api_result/",
-                                         return_matrix=True)
-    return result_patch
+                                         return_matrix=True, draw_contour=draw_contour, texts=None, )
+    return result_patch, bboxes
 
 
 if __name__ == '__main__':
